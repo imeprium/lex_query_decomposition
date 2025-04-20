@@ -1,0 +1,81 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Python environments
+venv/
+env/
+ENV/
+#.env
+#.env.*
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.html
+coverage.xml
+*.cover
+.hypothesis/
+
+# Project specific
+data/*
+!data/.gitkeep
+models/*
+!models/.gitkeep
+.ipynb_checkpoints
+notebooks/
+*-checkpoint.ipynb
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md
+CHANGELOG.md
+docs/
+LICENSE
+
+# Temporary files
+.DS_Store
+Thumbs.db
+.tmp/
+.temp/
