@@ -3,19 +3,17 @@ from typing import Dict, Any, List
 
 def format_as_markdown(result: Dict[str, Any]) -> str:
     """
-    Format the query response as markdown
+    Format the query response as markdown wrapped in curly braces
 
     Args:
         result: The query result dictionary
 
     Returns:
-        Formatted markdown string
+        Formatted markdown string wrapped in curly braces
     """
-    output = []
+    output = [f"# {result.get('original_question', 'Query Results')}", ""]
 
     # Add original question
-    output.append(f"# {result.get('original_question', 'Query Results')}")
-    output.append("")
 
     # Add decomposed questions and answers if available
     if "decomposed_questions" in result and result["decomposed_questions"]:
@@ -95,4 +93,6 @@ def format_as_markdown(result: Dict[str, Any]) -> str:
             type_name = field_type.replace("_title", "").capitalize()
             output.append(f"- **{type_name}**: {title} (Document ID: {doc.get('document_id', 'Unknown')})")
 
-    return "\n".join(output)
+    # Combine all lines and wrap in curly braces
+    markdown_content = "\n".join(output)
+    return "{\n" + markdown_content + "\n}"
