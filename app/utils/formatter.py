@@ -3,21 +3,22 @@ from typing import Dict, Any, List
 
 def format_as_markdown(result: Dict[str, Any]) -> str:
     """
-    Format the query response as markdown wrapped in curly braces
+    Format the query response as markdown wrapped in curly braces with 'markdown:' prefix
+    Omits the original question and changes "Decomposed Questions" to "Key Legal Questions"
 
     Args:
         result: The query result dictionary
 
     Returns:
-        Formatted markdown string wrapped in curly braces
+        Formatted markdown string wrapped in curly braces with markdown prefix
     """
-    output = [f"# {result.get('original_question', 'Query Results')}", ""]
+    output = ["# ", ""]
 
-    # Add original question
+    # Add empty level 1 heading instead of the question
 
-    # Add decomposed questions and answers if available
+    # Add key legal questions section (instead of decomposed questions)
     if "decomposed_questions" in result and result["decomposed_questions"]:
-        output.append("## Decomposed Questions")
+        output.append("## Key Legal Questions")
         output.append("")
 
         for i, q_a in enumerate(result["decomposed_questions"], 1):
@@ -93,6 +94,10 @@ def format_as_markdown(result: Dict[str, Any]) -> str:
             type_name = field_type.replace("_title", "").capitalize()
             output.append(f"- **{type_name}**: {title} (Document ID: {doc.get('document_id', 'Unknown')})")
 
-    # Combine all lines and wrap in curly braces
+    # Combine all lines and wrap in the new format with markdown: prefix
     markdown_content = "\n".join(output)
-    return "{\n" + markdown_content + "\n}"
+
+    # Escape any double quotes in the content to prevent JSON formatting issues
+    markdown_content = markdown_content.replace('"', '\\"')
+
+    return "{\nmarkdown:\n\"" + markdown_content + "\"\n}"

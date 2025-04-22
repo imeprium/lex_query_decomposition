@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import logging
 import time
 import uvicorn
+from pathlib import Path
 
 from app.config.logging import setup_logging
-from app.api import router
+from app.endpoints.ask import router  # Correct import path based on file structure
 from app.document_store.store import get_document_store
 from app.config.settings import (
     APP_HOST, APP_PORT,
@@ -19,6 +21,12 @@ from app.components.retrievers import get_ranker
 
 # Setup logging
 logger = setup_logging()
+
+# Ensure directories exist
+static_dir = Path("static")
+static_dir.mkdir(exist_ok=True)
+signatures_dir = Path("static/signatures")
+signatures_dir.mkdir(exist_ok=True, parents=True)
 
 
 @asynccontextmanager
@@ -82,7 +90,10 @@ app.add_middleware(
     allow_headers=CORS_ALLOWED_HEADERS,
 )
 
-# Include API router
+# Mount static files directory for logo, signatures, etc.
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Include API router with both endpoints
 app.include_router(router)
 
 

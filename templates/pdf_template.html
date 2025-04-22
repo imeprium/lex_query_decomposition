@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legal Analysis - {{ original_question }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+            @top-center {
+                content: element(header);
+            }
+            @bottom-center {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 10pt;
+                font-family: Arial, sans-serif;
+            }
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.4;
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            position: running(header);
+            text-align: center;
+            padding-bottom: 10px;
+        }
+
+        .logo {
+            width: 180px;
+            height: 60px; /* Added explicit height */
+            margin-bottom: 15px;
+            object-fit: contain; /* Maintains aspect ratio */
+        }
+
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 120px;
+            color: rgba(200, 200, 200, 0.15);
+            z-index: -1000;
+            pointer-events: none;
+        }
+
+        h1 {
+            font-size: 18pt;
+            font-weight: bold;
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            font-size: 14pt;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        h3 {
+            font-size: 12pt;
+            font-weight: bold;
+            margin-top: 15px;
+            margin-bottom: 8px;
+        }
+
+        .question {
+            margin-bottom: 15px;
+        }
+
+        .answer {
+            margin-bottom: 20px;
+        }
+
+        .bullet-list {
+            margin-left: 20px;
+            margin-bottom: 10px;
+        }
+
+        .bullet-list li {
+            margin-bottom: 5px;
+        }
+
+        .source-item {
+            margin-bottom: 5px;
+        }
+
+        .source-name {
+            font-weight: bold;
+        }
+
+        .section {
+            margin-bottom: 20px;
+        }
+
+        .signature {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ccc;
+        }
+
+        .signature-info {
+            font-size: 10pt;
+            color: #333;
+        }
+
+        .signature-image {
+            height: 40px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <img class="logo" src="{{ base_url }}/static/lexanalytics_logo.png" alt="Lexanalytics Logo" width="180" height="60">
+    </div>
+
+    <!-- Watermark -->
+    <div class="watermark">LEXANALYTICS</div>
+
+    <h1>{{ original_question }}</h1>
+
+    <h2>Key Legal Questions</h2>
+
+    {% for q_a in decomposed_questions %}
+    <div class="question">
+        <h3>Q{{ loop.index }}: {{ q_a.question }}</h3>
+        <div class="answer">
+            {{ q_a.answer|replace('\n', '<br>')|safe }}
+        </div>
+    </div>
+    {% endfor %}
+
+    <h2>Final Answer</h2>
+
+    {% set final_sections = final_answer.split('\n\n') %}
+    {% for section in final_sections %}
+        {% if section.strip().endswith(':') or (section.strip() and section.strip()|length < 30 and section.strip() == section.strip().title()) %}
+            <h3>{{ section.strip().rstrip(':') }}</h3>
+        {% else %}
+            <div class="section">
+                {{ section|replace('\n', '<br>')|safe }}
+            </div>
+        {% endif %}
+    {% endfor %}
+
+    {% if document_metadata %}
+    <h3>Sources</h3>
+    <div class="bullet-list">
+        {% for doc in document_metadata %}
+        <div class="source-item">
+            {% set doc_type = '' %}
+            {% if doc.case_title %}
+                {% set doc_type = 'Case' %}
+                {% set title = doc.case_title %}
+            {% elif doc.article_title %}
+                {% set doc_type = 'Article' %}
+                {% set title = doc.article_title %}
+            {% elif doc.legislation_title %}
+                {% set doc_type = 'Legislation' %}
+                {% set title = doc.legislation_title %}
+            {% endif %}
+
+            <span class="source-name">• {{ doc_type }}:</span> {{ title }} (Document ID: {{ doc.document_id }})
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Digital Signature Area -->
+    <div class="signature">
+        <div class="signature-info">
+            <p>This document was digitally generated on {{ generation_date }} by Lexanalytics AI.</p>
+            <p>Document ID: {{ document_id }}</p>
+            {% if signature_image %}
+                <img class="signature-image" src="{{ base_url }}/static/signatures/{{ signature_image }}" alt="Digital Signature">
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
