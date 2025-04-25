@@ -1,16 +1,17 @@
 from typing import Dict, Any, List
+import json
 
 
 def format_as_markdown(result: Dict[str, Any]) -> str:
     """
-    Format the query response as markdown wrapped in curly braces with 'markdown:' prefix
+    Format the query response as valid JSON with a markdown key.
     Omits the original question and changes "Decomposed Questions" to "Key Legal Questions"
 
     Args:
         result: The query result dictionary
 
     Returns:
-        Formatted markdown string wrapped in curly braces with markdown prefix
+        Valid JSON string with the formatted markdown content
     """
     output = ["# ", ""]
 
@@ -94,10 +95,11 @@ def format_as_markdown(result: Dict[str, Any]) -> str:
             type_name = field_type.replace("_title", "").capitalize()
             output.append(f"- **{type_name}**: {title} (Document ID: {doc.get('document_id', 'Unknown')})")
 
-    # Combine all lines and wrap in the new format with markdown: prefix
+    # Combine all lines to create the markdown content
     markdown_content = "\n".join(output)
 
-    # Escape any double quotes in the content to prevent JSON formatting issues
-    markdown_content = markdown_content.replace('"', '\\"')
+    # Create a dictionary with markdown key and then convert to JSON
+    result_dict = {"markdown": markdown_content}
 
-    return "{\nmarkdown:\n\"" + markdown_content + "\"\n}"
+    # Return the JSON string
+    return json.dumps(result_dict)
