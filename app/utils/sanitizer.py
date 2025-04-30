@@ -82,7 +82,7 @@ def sanitize_legal_query(
         )
 
     # Check for minimum word count to ensure it's an actual question
-    if len(sanitized.split()) < 3:
+    if len(sanitized.split()) < 1:
         logger.warning(f"Rejected query with too few words: {sanitized}")
         raise HTTPException(
             status_code=400,

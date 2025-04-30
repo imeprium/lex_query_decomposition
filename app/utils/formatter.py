@@ -4,7 +4,7 @@ import json
 
 def format_as_markdown(result: Dict[str, Any]) -> str:
     """
-    Format the query response as valid JSON with a markdown key.
+    Format the query response as valid JSON with a Markdown key.
     Omits the original question and changes "Decomposed Questions" to "Key Legal Questions"
     Now in order: Empty heading, Answer, Sources, Key Legal Questions
 
