@@ -6,6 +6,7 @@ def format_as_markdown(result: Dict[str, Any]) -> str:
     """
     Format the query response as valid JSON with a markdown key.
     Omits the original question and changes "Decomposed Questions" to "Key Legal Questions"
+    Now in order: Empty heading, Answer, Sources, Key Legal Questions
 
     Args:
         result: The query result dictionary
@@ -17,30 +18,9 @@ def format_as_markdown(result: Dict[str, Any]) -> str:
 
     # Add empty level 1 heading instead of the question
 
-    # Add key legal questions section (instead of decomposed questions)
-    if "decomposed_questions" in result and result["decomposed_questions"]:
-        output.append("## Key Legal Questions")
-        output.append("")
-
-        for i, q_a in enumerate(result["decomposed_questions"], 1):
-            # Handle both dictionary and Pydantic model formats
-            if hasattr(q_a, 'question'):
-                # It's a Pydantic model
-                question = q_a.question
-                answer = q_a.answer if q_a.answer is not None else "No answer available"
-            else:
-                # It's a dictionary
-                question = q_a.get('question', '')
-                answer = q_a.get('answer', 'No answer available')
-
-            output.append(f"### Q{i}: {question}")
-            output.append("")
-            output.append(answer)
-            output.append("")
-
-    # Add final answer with sections
+    # Add final answer with sections (moved to be second)
     if "final_answer" in result and result["final_answer"]:
-        output.append("## Final Answer")
+        output.append("## Answer")
         output.append("")
 
         final_answer = result["final_answer"]
@@ -71,7 +51,7 @@ def format_as_markdown(result: Dict[str, Any]) -> str:
             output.append(content)
             output.append("")
 
-    # Add document sources
+    # Add document sources (third position)
     if "document_metadata" in result and result["document_metadata"]:
         output.append("### Sources")
         output.append("")
@@ -95,10 +75,33 @@ def format_as_markdown(result: Dict[str, Any]) -> str:
             type_name = field_type.replace("_title", "").capitalize()
             output.append(f"- **{type_name}**: {title} (Document ID: {doc.get('document_id', 'Unknown')})")
 
-    # Combine all lines to create the markdown content
+        output.append("")  # Add blank line after sources
+
+    # MOVED TO BOTTOM: Add key legal questions section (instead of decomposed questions)
+    if "decomposed_questions" in result and result["decomposed_questions"]:
+        output.append("## Key Legal Questions")
+        output.append("")
+
+        for i, q_a in enumerate(result["decomposed_questions"], 1):
+            # Handle both dictionary and Pydantic model formats
+            if hasattr(q_a, 'question'):
+                # It's a Pydantic model
+                question = q_a.question
+                answer = q_a.answer if q_a.answer is not None else "No answer available"
+            else:
+                # It's a dictionary
+                question = q_a.get('question', '')
+                answer = q_a.get('answer', 'No answer available')
+
+            output.append(f"### Q{i}: {question}")
+            output.append("")
+            output.append(answer)
+            output.append("")
+
+    # Combine all lines to create the Markdown content
     markdown_content = "\n".join(output)
 
-    # Create a dictionary with markdown key and then convert to JSON
+    # Create a dictionary with Markdown key and then convert to JSON
     result_dict = {"markdown": markdown_content}
 
     # Return the JSON string

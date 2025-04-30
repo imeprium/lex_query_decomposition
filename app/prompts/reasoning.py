@@ -30,5 +30,5 @@ Your analysis should be structured with the following sections:
 - Analysis: Apply the identified legal framework to the question, using only information from the documents
 - Conclusion: Provide a clear, document-based answer to the original question
 
-Final Analysis:
+Answer:
 """
