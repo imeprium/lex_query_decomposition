@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:docs.haystack.deepset.ai)",
+      "WebFetch(domain:haystack.deepset.ai)",
+      "Read(//c/Users/Russell/PycharmProjects/ai-Lexprojects/enterprise_contract/services/**)",
+      "Read(//c/Users/Russell/PycharmProjects/ai-Lexprojects/enterprise_contract/routes/**)",
+      "Read(//c/Users/Russell/PycharmProjects/ai-Lexprojects/enterprise_contract/models/**)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Read(//c/Users/Russell/PycharmProjects/ai-Lexprojects/enterprise_contract/**)",
+      "Bash(timeout:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(dir:*)",
+      "Bash(pip install:*)",
+      "Bash(cmd:*)",
+      "Bash(powershell:*)",
+      "Bash(set:*)",
+      "Bash(tasklist:*)",
+      "Bash(wmic:*)",
+      "Bash(kill_port_9005.bat:*)",
+      "Bash(rm:*)",
+      "Read(//c/Users/Russell/PycharmProjects/ai-Lexprojects/seamntic_search/**)",
+      "Bash(git remote remove:*)",
+      "Bash(git remote add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
