@@ -9,12 +9,13 @@ from haystack.utils import Secret
 from haystack_integrations.components.generators.cohere import CohereGenerator
 from app.config.settings import COHERE_API_KEY, COHERE_MODEL
 from app.models import Questions, Question
+from app.core.async_component import AsyncComponent
 
 logger = logging.getLogger("components")
 
 
 @component
-class ExtendedCohereGenerator:
+class ExtendedCohereGenerator(AsyncComponent):
     """
     Extended Cohere Generator with structured output support using Cohere's JSON schema functionality.
     Works with Command R and Command R+ models.
@@ -54,116 +55,72 @@ class ExtendedCohereGenerator:
     def run(self, prompt: str, **kwargs):
         """
         Run the extended generator with structured output support
+        """
+        try:
+            # Handle structured output for compatible models
+            if self._should_use_structured_output():
+                return self._run_with_structured_output(prompt)
+            else:
+                # Standard operation without structured output
+                result = self.base_generator.run(prompt)
+                return {
+                    "replies": result["replies"],
+                    "meta": result["meta"],
+                    "structured_reply": None
+                }
+        except Exception as e:
+            logger.error(f"Error in generator run: {str(e)}", exc_info=True)
+            return self._create_error_response(str(e))
+
+    def _run_with_structured_output(self, prompt: str):
+        """
+        Run generator with structured output support
 
         Args:
-            prompt: The input prompt for the generator
-            **kwargs: Additional keyword arguments (ignored for CohereGenerator compatibility)
+            prompt: The input prompt
 
         Returns:
             Dictionary with replies, meta info, and structured output
         """
-        # If model_type is provided and we have a compatible Cohere model, set up structured output
-        if self.model_type and self.model_name in ["command-r", "command-r-plus", "command-r-08-2024",
-                                                   "command-r+-08-2024"]:
-            logger.debug(f"Using structured output with model {self.model_name}")
+        try:
+            # Create structured prompt
+            structured_prompt = self._create_structured_prompt(prompt)
 
-            # Create schema for response format
-            schema = self.model_type.model_json_schema()
+            # Call the base generator
+            result = self.base_generator.run(structured_prompt)
+            replies = result["replies"]
+            meta = result["meta"]
 
-            # Add instruction to return JSON
-            structured_prompt = f"""
-            {prompt}
-
-            IMPORTANT: Please format your response as a valid JSON object following the schema:
-            {json.dumps(schema, indent=2)}
-
-            Return only the JSON object without any additional text.
-            """
-
-            # Call the Cohere API - NO generation_kwargs parameter
-            try:
-                # Call base generator's run method WITHOUT unsupported parameters
-                result = self.base_generator.run(structured_prompt)
-                replies = result["replies"]
-                meta = result["meta"]
-
-                # Parse the JSON response
-                structured_output = self._parse_structured_output(replies[0])
-
-                return {
-                    "replies": replies,
-                    "meta": meta,
-                    "structured_reply": structured_output
-                }
-            except Exception as e:
-                logger.error(f"Error in structured output generation: {str(e)}")
-                # Return empty structured response with valid default values
-                if self.model_type == Questions:
-                    # For Questions model, initialize with empty questions list
-                    empty_model = Questions(questions=[])
-                else:
-                    # For other models, use empty initialization
-                    empty_model = self.model_type()
-
-                return {
-                    "replies": ["Error generating structured response"],
-                    "meta": [{"error": str(e)}],
-                    "structured_reply": empty_model
-                }
-        else:
-            # Standard operation without structured output - NO generation_kwargs
-            result = self.base_generator.run(prompt)
+            # Parse the JSON response
+            structured_output = self._parse_structured_output(replies[0])
 
             return {
-                "replies": result["replies"],
-                "meta": result["meta"],
-                "structured_reply": None
+                "replies": replies,
+                "meta": meta,
+                "structured_reply": structured_output
             }
+        except Exception as e:
+            logger.error(f"Error in structured output generation: {str(e)}")
+            return self._create_error_response(str(e))
 
     @component.output_types(replies=List[str], meta=List[Dict[str, Any]], structured_reply=BaseModel)
     async def run_async(self, prompt: str, **kwargs):
         """
         Asynchronous version of run method for better performance in async pipelines
-
-        Args:
-            prompt: The input prompt for the generator
-            **kwargs: Additional keyword arguments (ignored for CohereGenerator compatibility)
-
-        Returns:
-            Dictionary with replies, meta info, and structured output
         """
-        # If model_type is provided and we have a compatible Cohere model, set up structured output
-        if self.model_type and self.model_name in ["command-r", "command-r-plus", "command-r-08-2024",
-                                                   "command-r+-08-2024"]:
-            logger.debug(f"Using structured output with model {self.model_name} in async mode")
-
-            # Create schema for response format
-            schema = self.model_type.model_json_schema()
-
-            # Add instruction to return JSON
-            structured_prompt = f"""
-            {prompt}
-
-            IMPORTANT: Please format your response as a valid JSON object following the schema:
-            {json.dumps(schema, indent=2)}
-
-            Return only the JSON object without any additional text.
-            """
-
-            # Call the Cohere API asynchronously if possible
-            try:
+        try:
+            # Handle structured output for compatible models
+            if self._should_use_structured_output():
                 # Check if base_generator has async support
                 if hasattr(self.base_generator, 'run_async'):
-                    # Use async method if available
+                    structured_prompt = self._create_structured_prompt(prompt)
                     result = await self.base_generator.run_async(structured_prompt)
                 else:
-                    # Fall back to running sync method in a thread pool
-                    result = await asyncio.to_thread(self.base_generator.run, structured_prompt)
+                    # Fall back to sync method in thread pool
+                    return await self.to_thread(self._run_with_structured_output, prompt)
 
                 replies = result["replies"]
                 meta = result["meta"]
-
-                # Parse the JSON response
                 structured_output = self._parse_structured_output(replies[0])
 
                 return {
@@ -171,77 +128,80 @@ class ExtendedCohereGenerator:
                     "meta": meta,
                     "structured_reply": structured_output
                 }
-            except Exception as e:
-                logger.error(f"Error in async structured output generation: {str(e)}")
-                # Return empty structured response with valid default values
-                if self.model_type == Questions:
-                    # For Questions model, initialize with empty questions list
-                    empty_model = Questions(questions=[])
-                else:
-                    # For other models, use empty initialization
-                    empty_model = self.model_type()
-
-                return {
-                    "replies": ["Error generating structured response"],
-                    "meta": [{"error": str(e)}],
-                    "structured_reply": empty_model
-                }
-        else:
-            # Standard operation without structured output
-            try:
-                # Check if base_generator has async support
+            else:
+                # Standard operation - run base generator async if available
                 if hasattr(self.base_generator, 'run_async'):
-                    # Use async method if available
                     result = await self.base_generator.run_async(prompt)
                 else:
-                    # Fall back to running sync method in a thread pool
-                    result = await asyncio.to_thread(self.base_generator.run, prompt)
+                    result = await self.to_thread(self.base_generator.run, prompt)
 
                 return {
                     "replies": result["replies"],
                     "meta": result["meta"],
                     "structured_reply": None
                 }
-            except Exception as e:
-                logger.error(f"Error in async standard output generation: {str(e)}")
-                return {
-                    "replies": [f"Error: {str(e)}"],
-                    "meta": [{"error": str(e)}],
-                    "structured_reply": None
-                }
+        except Exception as e:
+            logger.error(f"Error in async generator run: {str(e)}", exc_info=True)
+            return self._create_error_response(str(e))
+
+    def _should_use_structured_output(self) -> bool:
+        """Check if structured output should be used"""
+        structured_models = [
+            "command-r", "command-r-plus", "command-r-08-2024", "command-r+-08-2024"
+        ]
+        return (self.model_type is not None and
+                self.model_name in structured_models)
+
+    def _create_structured_prompt(self, prompt: str) -> str:
+        """Create a prompt with structured output instructions"""
+        schema = self.model_type.model_json_schema()
+        return f"""
+        {prompt}
+
+        IMPORTANT: Please format your response as a valid JSON object following the schema:
+        {json.dumps(schema, indent=2)}
+
+        Return only the JSON object without any additional text.
+        """
 
     def _parse_structured_output(self, text: str) -> BaseModel:
-        """
-        Parse the JSON response from Cohere into the provided Pydantic model
-        """
+        """Parse JSON response into the provided Pydantic model"""
         try:
-            # Try to find JSON in the text (in case there's additional text)
+            # Try to find JSON in the text
             json_start = text.find('{')
             json_end = text.rfind('}') + 1
 
             if 0 <= json_start < json_end:
                 json_str = text[json_start:json_end]
                 logger.debug(f"Extracted JSON: {json_str[:100]}...")
-
-                # Parse the JSON
                 parsed_data = json.loads(json_str)
-
-                # Convert to Pydantic model
-                structured_output = self.model_type.model_validate(parsed_data)
-                return structured_output
+                return self.model_type.model_validate(parsed_data)
             else:
-                # Try to parse the whole text as JSON
+                # Try parsing the whole text as JSON
                 logger.warning("Could not find JSON delimiters, attempting to parse entire response")
-                structured_output = self.model_type.model_validate_json(text)
-                return structured_output
-
+                return self.model_type.model_validate_json(text)
         except Exception as e:
-            logger.error(f"Failed to parse structured output: {str(e)}. Response was: {text[:200]}...")
+            logger.error(f"Failed to parse structured output: {str(e)}. Response: {text[:200]}...")
+            return self._create_empty_model()
 
-            # Return properly initialized empty model
-            if self.model_type == Questions:
-                # For Questions model, initialize with empty questions list
-                return Questions(questions=[])
-            else:
-                # For other models, use empty initialization
-                return self.model_type()
+    def _create_empty_model(self) -> BaseModel:
+        """Create an empty model instance based on model_type"""
+        if self.model_type == Questions:
+            return Questions(questions=[])
+        else:
+            return self.model_type()
+
+    def _create_error_response(self, error_message: str) -> Dict[str, Any]:
+        """Create a standardized error response"""
+        if self.model_type == Questions:
+            empty_model = Questions(questions=[])
+        elif self.model_type:
+            empty_model = self.model_type()
+        else:
+            empty_model = None
+
+        return {
+            "replies": [f"Error: {error_message}"],
+            "meta": [{"error": error_message}],
+            "structured_reply": empty_model
+        }

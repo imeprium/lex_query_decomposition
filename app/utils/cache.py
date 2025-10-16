@@ -2,185 +2,159 @@ import json
 import logging
 import asyncio
 from typing import Dict, Any, Optional, Union
-
-# Import the upstash-redis client
 from upstash_redis import Redis
 
-# Import config (assuming this remains the same)
 from app.config.settings import (
     UPSTASH_REDIS_REST_URL,
-    UPSTASH_REDIS_REST_TOKEN,  # This will be used as the Upstash token
+    UPSTASH_REDIS_REST_TOKEN,
     REDIS_CACHE_TTL,
     REDIS_CACHE_ENABLED
 )
 
 logger = logging.getLogger("cache")
 
-# Upstash Redis client singleton
-_redis_client: Optional[Union[Redis, 'DummyRedisClient']] = None
+# Synchronous Redis client - Upstash client is not async-native
+_redis_client = None
+_is_connected = False
 
 
+# Dummy client class for compatibility with main.py
 class DummyRedisClient:
-    """Fallback dummy client when Redis connection fails"""
+    """Dummy Redis client that always returns None"""
 
     async def get(self, *args, **kwargs):
-        logger.debug("Using dummy Redis client: GET called")
         return None
 
     async def set(self, *args, **kwargs):
-        logger.debug("Using dummy Redis client: SET called")
         return None
 
     async def ping(self, *args, **kwargs):
-        logger.debug("Using dummy Redis client: PING called")
-        # Ping should ideally return pong on success, but False indicates failure here
         return False
 
-    # Add other methods used by your application if necessary, returning dummy values
-    # Example:
-    # async def delete(self, *args, **kwargs):
-    #     logger.debug("Using dummy Redis client: DELETE called")
-    #     return 0 # Typically returns number of keys deleted
+    def __str__(self):
+        return "DummyRedisClient (Cache Disabled)"
 
 
-async def get_redis_client() -> Union[Redis, DummyRedisClient]:
-    """
-    Get or create the Upstash Redis client instance as a singleton.
-    Falls back to a DummyRedisClient if connection fails.
-    """
-    global _redis_client
+def _get_redis_client_sync():
+    """Get the Redis client synchronously"""
+    global _redis_client, _is_connected
 
-    # Check if client exists and is not the dummy client
-    # Or if it's the dummy client, we might want to retry connection (optional)
-    if _redis_client is None or isinstance(_redis_client, DummyRedisClient):
-        logger.info(f"Attempting to initialize Upstash Redis client connection to {UPSTASH_REDIS_REST_URL}")
+    if _redis_client is None:
         try:
-            # Initialize Upstash Redis client
-            # Note: UPSTASH_REDIS_REST_TOKEN from your config is used as the 'token'
-            temp_client = Redis(
+            logger.info(f"Initializing Upstash Redis client to {UPSTASH_REDIS_REST_URL}")
+            _redis_client = Redis(
                 url=UPSTASH_REDIS_REST_URL,
-                token=UPSTASH_REDIS_REST_TOKEN,
-                # Upstash-redis usually decodes responses automatically.
-                # Timeout/keepalive are handled differently than direct socket connections.
+                token=UPSTASH_REDIS_REST_TOKEN
             )
 
-            # Test connection - using to_thread since Redis methods are synchronous
-            ping_result = await asyncio.to_thread(temp_client.ping)
-            if ping_result != "PONG":
-                raise Exception("Redis ping didn't return expected response")
+            # Test connection
+            ping_result = _redis_client.ping()
+            _is_connected = (ping_result == "PONG")
 
-            logger.info("Successfully connected to Upstash Redis")
-            _redis_client = temp_client
+            if _is_connected:
+                logger.info("Successfully connected to Upstash Redis")
+            else:
+                logger.error("Redis ping failed, cache will be disabled")
         except Exception as e:
-            logger.error(f"Failed to connect to Upstash Redis: {str(e)}")
-            logger.warning("Falling back to DummyRedisClient. Caching will be disabled.")
-            # Return dummy client that won't cause application failures
-            _redis_client = DummyRedisClient()
+            logger.error(f"Redis connection error: {str(e)}")
+            _is_connected = False
 
     return _redis_client
 
 
+# Export this function for main.py
+async def get_redis_client():
+    """
+    Get Redis client for use in main.py
+    Returns a DummyRedisClient if connection failed
+    """
+    # Get the client synchronously
+    client = _get_redis_client_sync()
+
+    # If not connected, return dummy client
+    if not _is_connected:
+        return DummyRedisClient()
+
+    return client
+
+
 async def get_cached_result(query_key: str) -> Optional[Dict[str, Any]]:
-    """
-    Get cached result for a query key using Upstash Redis.
-
-    Args:
-        query_key: The query key (sanitized question)
-
-    Returns:
-        Cached result dictionary or None if not found or cache disabled/failed.
-    """
+    """Get cached result for a query key"""
     if not REDIS_CACHE_ENABLED:
-        logger.debug("Redis cache is disabled.")
         return None
 
-    redis_client = await get_redis_client()
-
-    # If we got the dummy client, don't proceed with caching operations
-    if isinstance(redis_client, DummyRedisClient):
+    # Get client and check connection
+    redis_client = _get_redis_client_sync()
+    if not _is_connected:
         return None
 
     try:
+        # Create key with namespace
         cache_key = f"legal_query:{query_key}"
-        # Use to_thread for synchronous Redis client methods
-        cached_data = await asyncio.to_thread(redis_client.get, cache_key)
 
-        if cached_data:
-            logger.info(f"Cache hit for query: {query_key[:50]}...")
-            # cached_data from upstash-redis might already be decoded if it was a simple string,
-            # but since we store JSON, it should still be a string here needing json.loads.
+        # Execute in thread pool to avoid blocking
+        redis_data = await asyncio.to_thread(redis_client.get, cache_key)
+
+        if redis_data:
+            logger.info(f"Cache hit for key: {cache_key[:30]}...")
             try:
-                result = json.loads(cached_data)
-                return result
-            except json.JSONDecodeError as json_err:
-                logger.error(f"Failed to decode JSON from cache for key {cache_key}: {json_err}")
-                # Optionally delete the corrupted key
-                await asyncio.to_thread(redis_client.delete, cache_key)
+                result = json.loads(redis_data)
+                # Add cache hit flag
+                if isinstance(result, dict):
+                    result["cache_hit"] = True
+                # Reconstruct Pydantic models
+                return _reconstruct_models(result)
+            except json.JSONDecodeError as e:
+                logger.error(f"Cache JSON decode error: {str(e)}")
                 return None
-
-        logger.debug(f"Cache miss for query: {query_key[:50]}...")
-        return None
+        else:
+            logger.debug(f"Cache miss for key: {cache_key[:30]}...")
+            return None
     except Exception as e:
-        # Log specific redis operation errors
-        logger.error(f"Error retrieving cache data from Upstash Redis: {str(e)}")
+        logger.error(f"Cache retrieval error: {str(e)}")
         return None
 
 
 async def cache_result(query_key: str, result: Dict[str, Any]) -> bool:
-    """
-    Cache result for a query key using Upstash Redis.
-
-    Args:
-        query_key: The query key (sanitized question)
-        result: The result dictionary to cache
-
-    Returns:
-        True if caching was successful, False otherwise.
-    """
+    """Store result in cache"""
     if not REDIS_CACHE_ENABLED:
-        logger.debug("Redis cache is disabled.")
         return False
 
-    redis_client = await get_redis_client()
-
-    # If we got the dummy client, don't proceed with caching operations
-    if isinstance(redis_client, DummyRedisClient):
+    # Get client and check connection
+    redis_client = _get_redis_client_sync()
+    if not _is_connected:
         return False
 
     try:
+        # Create key with namespace
         cache_key = f"legal_query:{query_key}"
-        # Prepare data for JSON serialization (handling Pydantic models etc.)
+
+        # Prepare data for storage - Handle Pydantic models
         serializable_result = _prepare_for_serialization(result)
+
+        # Convert to JSON string
         json_data = json.dumps(serializable_result)
 
-        # Set with expiration (TTL) using 'ex' parameter - run in thread pool
+        # Store with TTL (execute in thread pool)
         await asyncio.to_thread(
             redis_client.set,
             cache_key,
             json_data,
-            ex=REDIS_CACHE_TTL  # Expiration in seconds
+            ex=REDIS_CACHE_TTL
         )
-        logger.info(f"Cached result for query: {query_key[:50]}... with TTL {REDIS_CACHE_TTL}s")
+
+        logger.info(f"Cached result for key: {cache_key[:30]}... TTL: {REDIS_CACHE_TTL}s")
         return True
     except Exception as e:
-        logger.error(f"Error caching result to Upstash Redis: {str(e)}")
+        logger.error(f"Cache storage error: {str(e)}")
         return False
 
 
 def _prepare_for_serialization(data: Any) -> Any:
-    """
-    Recursively prepare data (like Pydantic models) for JSON serialization.
-    (This function remains unchanged as it's not Redis client specific)
-
-    Args:
-        data: The data to prepare
-
-    Returns:
-        Serializable version of the data
-    """
+    """Prepare data for JSON serialization"""
     if hasattr(data, "model_dump"):
         # Pydantic v2+
-        return data.model_dump(mode='json')  # Use mode='json' for best JSON compatibility
+        return data.model_dump(mode='json')
     elif hasattr(data, "dict"):
         # Pydantic v1
         return data.dict()
@@ -189,5 +163,92 @@ def _prepare_for_serialization(data: Any) -> Any:
     elif isinstance(data, list):
         return [_prepare_for_serialization(item) for item in data]
     else:
-        # Assume basic types (str, int, float, bool, None) are directly serializable
+        # Basic types are returned as-is
         return data
+
+
+def _reconstruct_models(data: Any) -> Any:
+    """Reconstruct Pydantic models from dict representations"""
+    # Import here to avoid circular imports
+    from app.models import Questions, Question
+
+    if isinstance(data, dict):
+        # Check if this dict looks like a Questions object that was serialized
+        if "questions" in data and isinstance(data["questions"], list):
+            try:
+                questions_list = []
+                for q_data in data["questions"]:
+                    if isinstance(q_data, dict) and "question" in q_data:
+                        questions_list.append(
+                            Question(
+                                question=q_data.get("question", ""),
+                                answer=q_data.get("answer")
+                            )
+                        )
+                if questions_list:
+                    logger.info(f"Reconstructed Questions object from dict with {len(questions_list)} questions")
+                    return Questions(questions=questions_list)
+            except Exception as e:
+                logger.warning(f"Questions model reconstruction from dict failed: {str(e)}")
+
+        # Process all dict values recursively
+        return {k: _reconstruct_models(v) for k, v in data.items()}
+
+    elif isinstance(data, tuple):
+        # This is the problematic case - tuple needs to be reconstructed
+        logger.warning(f"Reconstructing tuple: {data}")
+        if len(data) >= 2 and data[0] == "questions":
+            # This is the specific case we've been seeing - ("questions", [Question(...)])
+            questions_list = data[1] if isinstance(data[1], list) else []
+            if questions_list:
+                # Convert to Questions object
+                try:
+                    questions_obj = Questions(questions=questions_list)
+                    logger.info(f"Reconstructed Questions object from tuple with {len(questions_list)} questions")
+                    return questions_obj
+                except Exception as e:
+                    logger.warning(f"Failed to reconstruct Questions from tuple: {str(e)}")
+                    return questions_list
+            return questions_list
+        elif len(data) >= 2:
+            # Try to reconstruct the second element if it's a questions list
+            reconstructed_second = _reconstruct_models(data[1])
+            return (data[0], reconstructed_second)
+        else:
+            return data
+
+    elif isinstance(data, list):
+        # Check if this looks like a Questions structure
+        if (len(data) > 0 and
+            isinstance(data[0], dict) and
+            "question" in data[0] and
+            "answer" in data[0]):
+            # This is a list of question dictionaries - convert to Questions object
+            try:
+                questions_list = []
+                for q_data in data:
+                    if isinstance(q_data, dict) and "question" in q_data:
+                        questions_list.append(
+                            Question(
+                                question=q_data.get("question", ""),
+                                answer=q_data.get("answer")
+                            )
+                        )
+                if questions_list:
+                    logger.info(f"Reconstructed Questions object from list with {len(questions_list)} questions")
+                    return Questions(questions=questions_list)
+            except Exception as e:
+                logger.warning(f"Questions model reconstruction from list failed: {str(e)}")
+
+        # Regular list - process recursively
+        return [_reconstruct_models(item) for item in data]
+    else:
+        return data
+
+
+# Initialize connection at module load time
+if REDIS_CACHE_ENABLED:
+    try:
+        _get_redis_client_sync()
+    except Exception as e:
+        logger.error(f"Initial Redis connection failed: {str(e)}")

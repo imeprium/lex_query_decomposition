@@ -43,9 +43,9 @@ CORS_ALLOWED_METHODS = os.getenv("CORS_ALLOWED_METHODS", "GET,POST,OPTIONS").spl
 CORS_ALLOWED_HEADERS = os.getenv("CORS_ALLOWED_HEADERS", "Content-Type,Authorization").split(",")
 
 # Model settings
-COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r-plus")
+COHERE_MODEL = os.getenv("COHERE_MODEL", "command-r-08-2024")
 DENSE_EMBEDDING_MODEL = os.getenv("DENSE_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
-SPARSE_EMBEDDING_MODEL = os.getenv("SPARSE_EMBEDDING_MODEL", "prithivida/Splade_PP_en_v1")
+SPARSE_EMBEDDING_MODEL = os.getenv("SPARSE_EMBEDDING_MODEL", "Qdrant/bm42-all-minilm-l6-v2-attentions")
 RANKER_MODEL = os.getenv("RANKER_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
 
 # Retrieval settings
